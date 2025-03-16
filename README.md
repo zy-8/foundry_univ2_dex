@@ -2,7 +2,7 @@
 
 ## 安装与配置
 
-### 1. 安装依赖
+# 1. 安装依赖
 ```bash
 # 安装 Uniswap V2 相关依赖
 forge install Uniswap/v2-core --no-commit
@@ -13,24 +13,24 @@ forge install Uniswap/solidity-lib --no-commit
 forge install OpenZeppelin/openzeppelin-contracts --no-commit
 ```
 
-### 2. 配置 Remappings
+# 2. 配置 Remappings
 确保 `remappings.txt` 包含以下映射：
 
-@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
-erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
-forge-std/=lib/forge-std/src/
-halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/
-openzeppelin-contracts/=lib/openzeppelin-contracts/
-solidity-lib/=lib/solidity-lib/contracts/
-v2-core/=lib/v2-core/contracts/
-v2-periphery/=lib/v2-periphery/contracts/
-@uniswap/v2-core/=lib/v2-core/
-@uniswap/lib/=lib/solidity-lib/
+- @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+- erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
+- forge-std/=lib/forge-std/src/
+- halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/
+- openzeppelin-contracts/=lib/openzeppelin-contracts/
+- solidity-lib/=lib/solidity-lib/contracts/
+- v2-core/=lib/v2-core/contracts/
+- v2-periphery/=lib/v2-periphery/contracts/
+- @uniswap/v2-core/=lib/v2-core/
+- @uniswap/lib/=lib/solidity-lib/
 
 # 3. 编译需要的合约
-forge build --contracts lib/v2-core/contracts/UniswapV2Factory.sol --use solc:0.5.16 --skip test
-forge build --contracts lib/v2-periphery/contracts/test/WETH9.sol --use solc:0.6.6 --skip test
-forge build --contracts lib/v2-periphery/contracts/UniswapV2Router02.sol --use solc:0.6.6 --skip test
+- forge build --contracts lib/v2-core/contracts/UniswapV2Factory.sol --use solc:0.5.16 --skip test
+- forge build --contracts lib/v2-periphery/contracts/test/WETH9.sol --use solc:0.6.6 --skip test
+- forge build --contracts lib/v2-periphery/contracts/UniswapV2Router02.sol --use solc:0.6.6 --skip test
 
 # 4. INIT_CODE_PAIR_HASH 影响添加流动性问题说明
 ## 问题背景
