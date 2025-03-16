@@ -8,6 +8,7 @@
 forge install Uniswap/v2-core --no-commit
 forge install Uniswap/v2-periphery --no-commit
 forge install Uniswap/solidity-lib --no-commit
+forge install Uniswap/solidity-lib --no-commit 
 
 # 安装 OpenZeppelin 合约
 forge install OpenZeppelin/openzeppelin-contracts --no-commit
