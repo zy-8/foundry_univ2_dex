@@ -15,7 +15,9 @@ forge install OpenZeppelin/openzeppelin-contracts --no-commit
 
 # 2. 配置 Remappings
 确保 `remappings.txt` 包含以下映射：
-
+```bash
+forge remappings > remappings.txt
+```
 - @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 - erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
 - forge-std/=lib/forge-std/src/
