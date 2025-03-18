@@ -1,151 +1,125 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./interfaces/IUniswapV2Factory.sol";
-import "./interfaces/IUniswapV2Router02.sol";
-import "./interfaces/IUniswapV2Pair.sol";
 import "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import "../lib/v2-core/contracts/interfaces/IUniswapV2Factory.sol";
+import "../lib/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
+import "../lib/v2-periphery/contracts/interfaces/IWETH.sol";
+import "./interfaces/IDex.sol";
 
-contract MyDex {
+contract MyDex is IDex {
     IUniswapV2Factory public immutable factory;
-    IUniswapV2Router02 public immutable router;
     address public immutable WETH;
+    uint256 private constant FEE_NUMERATOR = 997;
+    uint256 private constant FEE_DENOMINATOR = 1000;
 
-    constructor(address _factory, address _router) {
+    constructor(address _factory, address _weth) {
+        require(_factory != address(0), "Invalid factory");
+        require(_weth != address(0), "Invalid WETH");
         factory = IUniswapV2Factory(_factory);
-        router = IUniswapV2Router02(_router);
-        WETH = router.WETH();
+        WETH = _weth;
     }
 
-    // Create a new liquidity pool for a token with ETH
-    function createPair(address token) external returns (address) {
-        return factory.createPair(token, WETH);
+    function getPairAddress(address tokenA, address tokenB) public view returns (address pair) {
+        return factory.getPair(tokenA, tokenB);
     }
 
-    // Add liquidity to a token-ETH pair
-    function addLiquidity(
-        address token,
-        uint amountToken,
-        uint amountETH,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external payable returns (uint amountTokenOut, uint amountETHOut, uint liquidity) {
-        IERC20(token).transferFrom(msg.sender, address(this), amountToken);
-        IERC20(token).approve(address(router), amountToken);
-
-        require(msg.value >= amountETH, "Insufficient ETH sent");
-
-        (amountTokenOut, amountETHOut, liquidity) = router.addLiquidityETH{value: amountETH}(
-            token,
-            amountToken,
-            amountTokenMin,
-            amountETHMin,
-            to,
-            deadline
-        );
-
-        // Refund excess ETH if any
-        if (msg.value > amountETH) {
-            (bool success, ) = msg.sender.call{value: msg.value - amountETH}("");
-            require(success, "ETH refund failed");
-        }
-
-        // Refund excess tokens if any
-        if (amountToken > amountTokenOut) {
-            IERC20(token).transfer(msg.sender, amountToken - amountTokenOut);
-        }
-
-        return (amountTokenOut, amountETHOut, liquidity);
-    }
-
-    // Remove liquidity from a token-ETH pair
-    function removeLiquidity(
-        address token,
-        uint liquidity,
-        uint amountTokenMin,
-        uint amountETHMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountToken, uint amountETH) {
-        address pair = factory.getPair(token, WETH);
-        IERC20(pair).transferFrom(msg.sender, address(this), liquidity);
-        IERC20(pair).approve(address(router), liquidity);
-
-        return router.removeLiquidityETH(
-            token,
-            liquidity,
-            amountTokenMin,
-            amountETHMin,
-            to,
-            deadline
+    function sellETH(address buyToken, uint256 minBuyAmount) external payable {
+        require(msg.value > 0, "Must send ETH to sell");
+        require(buyToken != address(0) && buyToken != WETH, "Invalid token");
+        require(minBuyAmount > 0, "Invalid min amount");
+        
+        // 获取交易对地址
+        address pair = getPairAddress(buyToken, WETH);
+        require(pair != address(0), "Pair does not exist");
+        
+        // 将 ETH 转换为 WETH
+        IWETH(WETH).deposit{value: msg.value}();
+        
+        // 获取储备量并计算输出金额
+        (uint256 amountOut, address token0) = _getAmountOut(msg.value, WETH, buyToken, pair);
+        require(amountOut >= minBuyAmount, "Insufficient output amount");
+        
+        // 给交易对批准 WETH
+        IWETH(WETH).approve(pair, msg.value);
+        
+        // 向交易对转移 WETH
+        IWETH(WETH).transfer(pair, msg.value);
+        
+        // 执行交换
+        IUniswapV2Pair(pair).swap(
+            buyToken == token0 ? amountOut : 0, 
+            buyToken == token0 ? 0 : amountOut, 
+            msg.sender, 
+            new bytes(0)
         );
     }
 
-    // Swap tokens for ETH
-    function swapTokensForETH(
-        address token,
-        uint amountIn,
-        uint amountOutMin,
-        address to,
-        uint deadline
-    ) external returns (uint[] memory amounts) {
-        IERC20(token).transferFrom(msg.sender, address(this), amountIn);
-        IERC20(token).approve(address(router), amountIn);
+    function buyETH(address sellToken, uint256 sellAmount, uint256 minBuyAmount) external override {
+        require(sellToken != address(0) && sellToken != WETH, "Invalid token");
+        require(sellAmount > 0, "Amount must be > 0");
+        require(minBuyAmount > 0, "Invalid min amount");
 
-        address[] memory path = new address[](2);
-        path[0] = token;
-        path[1] = WETH;
+        // 获取交易对地址
+        address pair = getPairAddress(sellToken, WETH);
+        require(pair != address(0), "Pair not exists");
 
-        return router.swapExactTokensForETH(
-            amountIn,
-            amountOutMin,
-            path,
-            to,
-            deadline
+        // 从用户转移代币
+        IERC20(sellToken).transferFrom(msg.sender, address(this), sellAmount);
+
+        // 获取储备量并计算输出金额
+        (uint256 amountOut, address token0) = _getAmountOut(sellAmount, sellToken, WETH, pair);
+        require(amountOut >= minBuyAmount, "Insufficient output amount");
+
+        // 给交易对批准代币
+        IERC20(sellToken).approve(pair, sellAmount);
+        
+        // 向交易对转移代币
+        IERC20(sellToken).transfer(pair, sellAmount);
+
+        // 执行交换
+        IUniswapV2Pair(pair).swap(
+            WETH == token0 ? amountOut : 0, 
+            WETH == token0 ? 0 : amountOut, 
+            address(this), 
+            new bytes(0)
         );
+        
+        // 将 WETH 转换回 ETH 并发送给用户
+        IWETH(WETH).withdraw(amountOut);
+        (bool success, ) = msg.sender.call{value: amountOut}("");
+        require(success, "ETH transfer failed");
     }
 
-    // Swap ETH for tokens
-    function swapETHForTokens(
-        address token,
-        uint amountOutMin,
-        address to,
-        uint deadline
-    ) external payable returns (uint[] memory amounts) {
-        address[] memory path = new address[](2);
-        path[0] = WETH;
-        path[1] = token;
-
-        return router.swapExactETHForTokens{value: msg.value}(
-            amountOutMin,
-            path,
-            to,
-            deadline
-        );
+    // 内部函数：计算输出金额
+    function _getAmountOut(
+        uint256 amountIn,
+        address tokenIn,
+        address tokenOut,
+        address pair
+    ) internal view returns (uint256 amountOut, address token0) {
+        // 获取储备量
+        (uint112 reserve0, uint112 reserve1,) = IUniswapV2Pair(pair).getReserves();
+        require(reserve0 > 0 && reserve1 > 0, "Insufficient liquidity");
+        
+        // 确保 token0 和 token1 的顺序正确
+        (token0,) = sortTokens(tokenIn, tokenOut);
+        (uint reserveIn, uint reserveOut) = tokenIn == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
+        
+        // 计算输出金额 (使用 Uniswap 的公式)
+        uint amountInWithFee = amountIn * FEE_NUMERATOR;
+        uint numerator = amountInWithFee * reserveOut;
+        uint denominator = (reserveIn * FEE_DENOMINATOR) + amountInWithFee;
+        amountOut = numerator / denominator;
     }
 
-    // Get the amount of tokens that would be received for a given amount of ETH
-    function getETHToTokenAmount(address token, uint amountETH) external view returns (uint) {
-        address[] memory path = new address[](2);
-        path[0] = WETH;
-        path[1] = token;
-
-        uint[] memory amounts = router.getAmountsOut(amountETH, path);
-        return amounts[1];
+    // 辅助函数: 按顺序排列代币地址
+    function sortTokens(address tokenA, address tokenB) internal pure returns (address token0, address token1) {
+        require(tokenA != tokenB, "Same token");
+        (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        require(token0 != address(0), "Zero address");
     }
 
-    // Get the amount of ETH that would be received for a given amount of tokens
-    function getTokenToETHAmount(address token, uint amountToken) external view returns (uint) {
-        address[] memory path = new address[](2);
-        path[0] = token;
-        path[1] = WETH;
-
-        uint[] memory amounts = router.getAmountsOut(amountToken, path);
-        return amounts[1];
-    }
-
-    // Fallback function to receive ETH
+    // 接收 ETH
     receive() external payable {}
-} 
+}
